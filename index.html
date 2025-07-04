@@ -41,12 +41,7 @@
   <div id="authModal">
     <div class="modal-content">
       <input type="text" id="loginUsername" placeholder="Username (admin only)" />
-      <div class="group">
-        <svg stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="icon">
-          <path d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" stroke-linejoin="round" stroke-linecap="round"></path>
-        </svg>
-      <input class="input" type="password" placeholder="password">
-      </div>
+      <input type="password" id="loginPassword" placeholder="Password" />
       <button onclick="login()">Login</button>
       <hr>
       <input type="password" id="signupPassword" placeholder="New Password" />
@@ -55,14 +50,93 @@
   </div>
 
   <script>
-    const apiUrl = `${window.location.protocol}//slash.serveo.net/api/messages`;
-    const userInfoUrl = `${window.location.protocol}//slash.serveo.net/api/user`;
+    const apiUrl = ${window.location.protocol}//${window.location.host}/api/messages;
 
     document.addEventListener("DOMContentLoaded", () => {
+      checkAuth();
       loadPosts();
-      loadUser();
       setInterval(loadPosts, 1000);
     });
+
+    function checkAuth() {
+      fetch("/api/me")
+        .then(res => {
+          if (!res.ok) throw new Error("Not logged in");
+          return res.json();
+        })
+        .then(user => {
+          document.getElementById("accountBtn").style.display = "block";
+          document.getElementById("accountUsername").textContent = user.username;
+          document.getElementById("accountPfp").src = user.pfp || "favicon.ico";
+        })
+        .catch(() => {
+          document.getElementById("authModal").style.display = "flex";
+        });
+    }
+
+    function login() {
+      fetch("/api/login", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          username: document.getElementById("loginUsername").value,
+          password: document.getElementById("loginPassword").value
+        })
+      })
+      .then(res => {
+        if (!res.ok) throw new Error();
+        return res.json();
+      })
+      .then(() => location.reload())
+      .catch(() => alert("Login failed"));
+    }
+
+    function signup() {
+      fetch("/api/signup", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ password: document.getElementById("signupPassword").value })
+      })
+      .then(res => res.json())
+      .then(() => location.reload())
+      .catch(() => alert("Signup failed"));
+    }
+
+    function changePassword() {
+      fetch("/api/change-password", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          oldPassword: document.getElementById("oldPassword").value,
+          newPassword: document.getElementById("newPassword").value
+        })
+      })
+      .then(res => {
+        if (!res.ok) throw new Error();
+        alert("Password changed");
+      })
+      .catch(() => alert("Password change failed"));
+    }
+
+    function uploadPfp() {
+      const file = document.getElementById("pfpInput").files[0];
+      const formData = new FormData();
+      formData.append("pfp", file);
+      fetch("/api/upload-pfp", {
+        method: "POST",
+        body: formData
+      })
+      .then(() => location.reload())
+      .catch(() => alert("Upload failed"));
+    }
+
+    function openAccountModal() {
+      document.getElementById("accountModal").style.display = "flex";
+    }
+
+    function closeAccountModal() {
+      document.getElementById("accountModal").style.display = "none";
+    }
 
     function loadPosts() {
       fetch(apiUrl)
@@ -71,9 +145,7 @@
           posts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
           const feed = document.getElementById("feed");
           feed.innerHTML = "";
-          posts.forEach(post => {
-            addPostToFeed(post, false);
-          });
+          posts.forEach(post => addPostToFeed(post, false));
         })
         .catch(error => console.error("Error loading posts:", error));
     }
@@ -110,17 +182,14 @@
       const postElement = document.createElement("li");
       postElement.classList.add("post");
 
-      let content = `
-        <div class="username-row">
-          ${post.pfp ? `<img src="${post.pfp}" class="pfp" alt="pfp" />` : ""}
-          <span class="username">${post.username}</span>
-        </div>
+      let content = 
+        <span class="username">${post.username}</span>
         <div class="message">${post.message}</div>
         <div class="timestamp">${new Date(post.timestamp).toLocaleString()}</div>
-      `;
+      ;
 
       if (post.imageUrl) {
-        content += `<img src="${post.imageUrl}" alt="Uploaded image">`;
+        content += <img src="${post.imageUrl}" alt="Uploaded image">;
       }
 
       postElement.innerHTML = content;
@@ -129,56 +198,6 @@
       } else {
         feed.appendChild(postElement);
       }
-    }
-
-    function toggleAccountModal() {
-      const modal = document.getElementById("accountModal");
-      modal.style.display = modal.style.display === "none" ? "block" : "none";
-    }
-
-    function loadUser() {
-      fetch(userInfoUrl)
-        .then(res => res.json())
-        .then(data => {
-          document.getElementById("accountUsername").textContent = data.username;
-          if (data.pfp) {
-            document.getElementById("accountPfp").src = data.pfp;
-          }
-        })
-        .catch(err => console.error("Not logged in", err));
-    }
-
-    document.getElementById("passwordForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const newPassword = document.getElementById("newPassword").value;
-      fetch("/api/change-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: newPassword })
-      }).then(() => alert("Password changed"));
-    });
-
-    document.getElementById("pfpForm").addEventListener("submit", (e) => {
-      e.preventDefault();
-      const formData = new FormData();
-      const file = document.getElementById("newPfp").files[0];
-      formData.append("pfp", file);
-
-      fetch("/api/upload-pfp", {
-        method: "POST",
-        body: formData
-      })
-        .then(() => {
-          alert("Profile picture updated");
-          loadUser();
-        });
-    });
-
-    function logout() {
-      fetch("/logout", { method: "POST" })
-        .then(() => {
-          window.location.reload();
-        });
     }
   </script>
 </body>
