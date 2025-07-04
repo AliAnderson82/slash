@@ -97,12 +97,12 @@ img {
     }
 
 .modal-content {
-      background: #111;
-      padding: 1rem;
-      border-radius: 0.5rem;
-      max-width: 300px;
-      width: 100%;
-    }
+    background: #00000087;
+    padding: 15px 30px 15px 15px;
+    border-radius: 0.5rem;
+    max-width: 300px;
+    width: 100%;
+}
 
 .modal-content input {
       width: 100%;
