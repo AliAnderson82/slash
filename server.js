@@ -1,52 +1,55 @@
+// Updated server.js with sign-out functionality and PFP support in posts
+
 const express = require("express");
 const fs = require("fs");
-const path = require("path");
 const multer = require("multer");
 const cors = require("cors");
+const path = require("path");
 const bcrypt = require("bcrypt");
-const cookieParser = require("cookie-parser");
-const crypto = require("crypto");
+const session = require("express-session");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const DATA_FILE = "messages.json";
 const USERS_FILE = "users.json";
-const UPLOADS_DIR = "uploads";
-const PFPS_DIR = "pfps";
+const UPLOAD_DIR = "uploads";
+const PFP_DIR = "pfps";
 
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
-if (!fs.existsSync(PFPS_DIR)) fs.mkdirSync(PFPS_DIR);
-if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, "[]");
-if (!fs.existsSync(USERS_FILE)) {
-  const defaultUsers = [
-    {
-      username: "/admin1",
-      passwordHash: bcrypt.hashSync("ali1382ali", 10),
-      pfp: null
-    },
-    {
-      username: "/admin2",
-      passwordHash: bcrypt.hashSync("araz1389araz", 10),
-      pfp: null
-    }
-  ];
-  fs.writeFileSync(USERS_FILE, JSON.stringify(defaultUsers, null, 2));
-}
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+if (!fs.existsSync(PFP_DIR)) fs.mkdirSync(PFP_DIR);
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const isPfp = req.originalUrl.includes("/upload-pfp");
+    cb(null, isPfp ? PFP_DIR : UPLOAD_DIR);
+  },
+  filename: (req, file, cb) => {
+    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, unique + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ storage });
 
 app.use(cors());
-app.use(express.json());
-app.use(cookieParser());
 app.use(express.static("."));
-app.use("/uploads", express.static(UPLOADS_DIR));
-app.use("/pfps", express.static(PFPS_DIR));
+app.use("/uploads", express.static(UPLOAD_DIR));
+app.use("/pfps", express.static(PFP_DIR));
+app.use(express.json());
+app.use(session({
+  secret: "supersecret", // Replace with a strong secret in production
+  resave: false,
+  saveUninitialized: true,
+}));
 
-const upload = multer({ dest: UPLOADS_DIR });
-const pfpUpload = multer({ dest: PFPS_DIR });
-
-// Utility functions
+// Load/save helpers
 function loadUsers() {
-  return JSON.parse(fs.readFileSync(USERS_FILE));
+  try {
+    return JSON.parse(fs.readFileSync(USERS_FILE));
+  } catch {
+    return {};
+  }
 }
 
 function saveUsers(users) {
@@ -54,130 +57,115 @@ function saveUsers(users) {
 }
 
 function loadMessages() {
-  return JSON.parse(fs.readFileSync(DATA_FILE));
+  try {
+    return JSON.parse(fs.readFileSync(DATA_FILE));
+  } catch {
+    return [];
+  }
 }
 
 function saveMessages(messages) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(messages, null, 2));
 }
 
-function hashIP(ip) {
-  return crypto.createHash("sha256").update(ip).digest("hex");
-}
+// Predefined admin accounts
+const admins = {
+  "/admin1": "ali1382ali",
+  "/admin2": "araz1389araz"
+};
 
-function getUserFromSession(req) {
-  const sessionId = req.cookies.sessionId;
-  if (!sessionId) return null;
+const users = loadUsers();
+for (const [admin, pass] of Object.entries(admins)) {
+  if (!users[admin]) {
+    users[admin] = {
+      password: bcrypt.hashSync(pass, 10),
+      pfp: null
+    };
+  }
+}
+saveUsers(users);
+
+app.post("/signup", (req, res) => {
   const users = loadUsers();
-  return users.find(user => user.sessionId === sessionId) || null;
-}
+  const userCount = Object.keys(users).filter(u => u.startsWith("/user_")).length + 1;
+  const newUsername = `/user_${userCount}`;
 
-// API routes
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: "Password required" });
+
+  const hashedPassword = bcrypt.hashSync(password, 10);
+  users[newUsername] = { password: hashedPassword, pfp: null };
+  saveUsers(users);
+
+  req.session.username = newUsername;
+  res.json({ username: newUsername });
+});
+
+app.post("/login", (req, res) => {
+  const users = loadUsers();
+  const { username, password } = req.body;
+
+  const user = users[username];
+  if (!user || !bcrypt.compareSync(password, user.password)) {
+    return res.status(401).json({ error: "Invalid credentials" });
+  }
+  req.session.username = username;
+  res.json({ username });
+});
+
+app.post("/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie("connect.sid");
+    res.json({ message: "Logged out" });
+  });
+});
+
+app.get("/session", (req, res) => {
+  if (req.session.username) {
+    const users = loadUsers();
+    res.json({ username: req.session.username, pfp: users[req.session.username]?.pfp });
+  } else {
+    res.status(401).json({ error: "Not signed in" });
+  }
+});
+
+app.post("/upload-pfp", upload.single("pfp"), (req, res) => {
+  if (!req.session.username) return res.status(401).json({ error: "Unauthorized" });
+
+  const users = loadUsers();
+  users[req.session.username].pfp = `/pfps/${req.file.filename}`;
+  saveUsers(users);
+  res.json({ pfp: users[req.session.username].pfp });
+});
+
+app.post("/api/messages", upload.single("image"), (req, res) => {
+  if (!req.session.username) return res.status(401).json({ error: "Unauthorized" });
+
+  const users = loadUsers();
+  const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+  const pfp = users[req.session.username]?.pfp || null;
+  const newMsg = {
+    username: req.session.username,
+    message: req.body.message,
+    timestamp: Date.now(),
+    imageUrl,
+    pfp
+  };
+
+  const messages = loadMessages();
+  messages.push(newMsg);
+  saveMessages(messages);
+  res.json(newMsg);
+});
+
 app.get("/api/messages", (req, res) => {
   res.json(loadMessages());
 });
 
-app.post("/api/messages", upload.single("image"), (req, res) => {
-  const user = getUserFromSession(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-  const { message } = req.body;
-  const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
-
-  const newMessage = {
-    username: user.username,
-    message,
-    imageUrl,
-    timestamp: Date.now(),
-    ipHash: hashIP(req.ip)
-  };
-
-  const messages = loadMessages();
-  messages.push(newMessage);
-  saveMessages(messages);
-  res.json(newMessage);
-});
-
-// Signup
-app.post("/api/signup", (req, res) => {
-  const users = loadUsers();
-  const nonAdminUsers = users.filter(u => !u.username.startsWith("/admin"));
-
-  const newUsername = `/user_${nonAdminUsers.length + 1}`;
-  const { password } = req.body;
-  const passwordHash = bcrypt.hashSync(password, 10);
-  const sessionId = crypto.randomBytes(16).toString("hex");
-
-  const newUser = {
-    username: newUsername,
-    passwordHash,
-    pfp: null,
-    sessionId
-  };
-
-  users.push(newUser);
-  saveUsers(users);
-
-  res.cookie("sessionId", sessionId, { httpOnly: true, sameSite: "Strict" });
-  res.json({ username: newUsername });
-});
-
-// Login
-app.post("/api/login", (req, res) => {
-  const { username, password } = req.body;
-  const users = loadUsers();
-  const user = users.find(u => u.username === username);
-
-  if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
-    return res.status(401).json({ error: "Invalid credentials" });
-  }
-
-  const sessionId = crypto.randomBytes(16).toString("hex");
-  user.sessionId = sessionId;
-  saveUsers(users);
-
-  res.cookie("sessionId", sessionId, { httpOnly: true, sameSite: "Strict" });
-  res.json({ username: user.username });
-});
-
-// Change password
-app.post("/api/change-password", (req, res) => {
-  const user = getUserFromSession(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-  const { oldPassword, newPassword } = req.body;
-  if (!bcrypt.compareSync(oldPassword, user.passwordHash)) {
-    return res.status(403).json({ error: "Incorrect old password" });
-  }
-
-  user.passwordHash = bcrypt.hashSync(newPassword, 10);
-  saveUsers(loadUsers().map(u => (u.username === user.username ? user : u)));
-  res.json({ success: true });
-});
-
-// Upload profile picture
-app.post("/api/upload-pfp", pfpUpload.single("pfp"), (req, res) => {
-  const user = getUserFromSession(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
-
-  const pfpPath = `/pfps/${req.file.filename}`;
-  user.pfp = pfpPath;
-  saveUsers(loadUsers().map(u => (u.username === user.username ? user : u)));
-  res.json({ pfp: pfpPath });
-});
-
-// Get current user
-app.get("/api/me", (req, res) => {
-  const user = getUserFromSession(req);
-  if (!user) return res.status(401).json({ error: "Unauthorized" });
-  res.json({ username: user.username, pfp: user.pfp || null });
-});
-
-// Serve index.html
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
 });
