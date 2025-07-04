@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Slash</title>
+  <link rel="icon" type="image/x-icon" href="./favicon.ico">
+  <style>
+    body {
+      font-family: sans-serif;
+      background-color: #000;
+      color: #fff;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+      padding: 1rem;
+    }
+    header {
+      font-size: 2rem;
+      font-weight: bold;
+      margin-bottom: 1rem;
+    }
+    .input-area {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    textarea {
+      resize: none;
+      height: 80px;
+      padding: 0.5rem;
+      font-size: 1rem;
+    }
+    button {
+      background-color: #1d9bf0;
+      border: none;
+      color: white;
+      padding: 0.5rem;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    #feed {
+      list-style: none;
+      padding: 0;
+    }
+    .post {
+      background-color: #111;
+      border: 1px solid #333;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      border-radius: 0.5rem;
+    }
+    .username {
+      color: #1d9bf0;
+      font-weight: bold;
+    }
+    .timestamp {
+      font-size: 0.8rem;
+      color: #999;
+      margin-top: 0.5rem;
+    }
+    .message {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+    }
+    img {
+      max-width: 100%;
+      margin-top: 0.5rem;
+      border-radius: 0.25rem;
+    }
+
+    #accountBtn {
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      overflow: hidden;
+      border: 2px solid #1d9bf0;
+    }
+
+    #accountBtn img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #accountModal, #authModal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+    }
+
+    .modal-content {
+      background: #111;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      max-width: 300px;
+      width: 100%;
+    }
+
+    .modal-content input {
+      width: 100%;
+      margin-bottom: 0.5rem;
+      padding: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>Slash</header>
+
+    <div class="input-area">
+      <textarea id="postInput" placeholder="What's happening?"></textarea>
+      <input type="file" id="imageInput" accept="image/*" />
+      <button onclick="postMessage()">Post</button>
+    </div>
+
+    <ul id="feed" class="feed"></ul>
+  </div>
+
+  <button id="accountBtn" onclick="openAccountModal()" style="display:none;">
+    <img id="accountPfp" src="" alt="pfp">
+  </button>
+
+  <div id="accountModal">
+    <div class="modal-content">
+      <p><strong id="accountUsername"></strong></p>
+      <input type="file" id="pfpInput" accept="image/*" />
+      <button onclick="uploadPfp()">Change Profile Picture</button>
+      <hr>
+      <input type="password" id="oldPassword" placeholder="Old Password" />
+      <input type="password" id="newPassword" placeholder="New Password" />
+      <button onclick="changePassword()">Change Password</button>
+      <hr>
+      <button onclick="closeAccountModal()">Close</button>
+    </div>
+  </div>
+
+  <div id="authModal">
+    <div class="modal-content">
+      <input type="text" id="loginUsername" placeholder="Username (admin only)" />
+      <input type="password" id="loginPassword" placeholder="Password" />
+      <button onclick="login()">Login</button>
+      <hr>
+      <input type="password" id="signupPassword" placeholder="New Password" />
+      <button onclick="signup()">Signup</button>
+    </div>
+  </div>
+
+  <script>
+    const apiUrl = ${window.location.protocol}//${window.location.host}/api/messages;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      checkAuth();
+      loadPosts();
+      setInterval(loadPosts, 1000);
+    });
+
+    function checkAuth() {
+      fetch("/api/me")
+        .then(res => {
+          if (!res.ok) throw new Error("Not logged in");
+          return res.json();
+        })
+        .then(user => {
+          document.getElementById("accountBtn").style.display = "block";
+          document.getElementById("accountUsername").textContent = user.username;
+          document.getElementById("accountPfp").src = user.pfp || "favicon.ico";
+        })
+        .catch(() => {
+          document.getElementById("authModal").style.display = "flex";
+        });
+    }
+
+    function login() {
+      fetch("/api/login", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          username: document.getElementById("loginUsername").value,
+          password: document.getElementById("loginPassword").value
+        })
+      })
+      .then(res => {
+        if (!res.ok) throw new Error();
+        return res.json();
+      })
+      .then(() => location.reload())
+      .catch(() => alert("Login failed"));
+    }
+
+    function signup() {
+      fetch("/api/signup", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ password: document.getElementById("signupPassword").value })
+      })
+      .then(res => res.json())
+      .then(() => location.reload())
+      .catch(() => alert("Signup failed"));
+    }
+
+    function changePassword() {
+      fetch("/api/change-password", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          oldPassword: document.getElementById("oldPassword").value,
+          newPassword: document.getElementById("newPassword").value
+        })
+      })
+      .then(res => {
+        if (!res.ok) throw new Error();
+        alert("Password changed");
+      })
+      .catch(() => alert("Password change failed"));
+    }
+
+    function uploadPfp() {
+      const file = document.getElementById("pfpInput").files[0];
+      const formData = new FormData();
+      formData.append("pfp", file);
+      fetch("/api/upload-pfp", {
+        method: "POST",
+        body: formData
+      })
+      .then(() => location.reload())
+      .catch(() => alert("Upload failed"));
+    }
+
+    function openAccountModal() {
+      document.getElementById("accountModal").style.display = "flex";
+    }
+
+    function closeAccountModal() {
+      document.getElementById("accountModal").style.display = "none";
+    }
+
+    function loadPosts() {
+      fetch(apiUrl)
+        .then(response => response.json())
+        .then(posts => {
+          posts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+          const feed = document.getElementById("feed");
+          feed.innerHTML = "";
+          posts.forEach(post => addPostToFeed(post, false));
+        })
+        .catch(error => console.error("Error loading posts:", error));
+    }
+
+    function postMessage() {
+      const input = document.getElementById("postInput");
+      const imageInput = document.getElementById("imageInput");
+      const message = input.value.trim();
+
+      const formData = new FormData();
+      formData.append("message", message);
+      if (imageInput.files.length > 0) {
+        formData.append("image", imageInput.files[0]);
+      }
+
+      if (message || imageInput.files.length > 0) {
+        fetch(apiUrl, {
+          method: "POST",
+          body: formData
+        })
+          .then(response => response.json())
+          .then(savedPost => {
+            addPostToFeed(savedPost, true);
+            input.value = "";
+            imageInput.value = null;
+          })
+          .catch(error => console.error("Error posting message:", error));
+      }
+    }
+
+    function addPostToFeed(post, toTop = true) {
+      const feed = document.getElementById("feed");
+
+      const postElement = document.createElement("li");
+      postElement.classList.add("post");
+
+      let content = 
+        <span class="username">${post.username}</span>
+        <div class="message">${post.message}</div>
+        <div class="timestamp">${new Date(post.timestamp).toLocaleString()}</div>
+      ;
+
+      if (post.imageUrl) {
+        content += <img src="${post.imageUrl}" alt="Uploaded image">;
+      }
+
+      postElement.innerHTML = content;
+      if (toTop) {
+        feed.insertBefore(postElement, feed.firstChild);
+      } else {
+        feed.appendChild(postElement);
+      }
+    }
+  </script>
+</body>
+</html>
