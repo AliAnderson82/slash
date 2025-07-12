@@ -151,3 +151,12 @@ img {
       padding: 0.5rem;
     }
 
+.pfp-inline {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 0.5rem;
+}
+
+

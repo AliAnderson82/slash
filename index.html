@@ -34,6 +34,8 @@
       <input type="password" id="newPassword" placeholder="New Password" />
       <button onclick="changePassword()">Change Password</button>
       <hr>
+      <button onclick="logout()">Sign Out</button>
+      <hr>
       <button onclick="closeAccountModal()">Close</button>
     </div>
   </div>
@@ -59,7 +61,7 @@
   });
 
   function checkAuth() {
-    fetch("/api/me")
+    fetch("/session")
       .then(res => {
         if (!res.ok) throw new Error("Not logged in");
         return res.json();
@@ -75,7 +77,7 @@
   }
 
   function login() {
-    fetch("/api/login", {
+    fetch("/login", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
@@ -91,8 +93,14 @@
     .catch(() => alert("Login failed"));
   }
 
+  function logout() {
+    fetch("/logout", { method: "POST" })
+      .then(() => location.reload())
+      .catch(() => alert("Logout failed"));
+  }
+
   function signup() {
-    fetch("/api/signup", {
+    fetch("/signup", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ password: document.getElementById("signupPassword").value })
@@ -122,7 +130,7 @@
     const file = document.getElementById("pfpInput").files[0];
     const formData = new FormData();
     formData.append("pfp", file);
-    fetch("/api/upload-pfp", {
+    fetch("/upload-pfp", {
       method: "POST",
       body: formData
     })
@@ -178,12 +186,15 @@
 
   function addPostToFeed(post, toTop = true) {
     const feed = document.getElementById("feed");
-
     const postElement = document.createElement("li");
     postElement.classList.add("post");
 
+    const isAdmin = post.username && post.username.startsWith("/admin");
+    const usernameClass = isAdmin ? 'username admin' : 'username';
+    const pfpTag = post.pfp ? `<img class="pfp-inline" src="${post.pfp}" alt="pfp">` : '';
+
     let content = `
-      <span class="username">${post.username}</span>
+      <span class="${usernameClass}">${pfpTag}${post.username}</span>
       <div class="message">${post.message}</div>
       <div class="timestamp">${new Date(post.timestamp).toLocaleString()}</div>
     `;
@@ -193,11 +204,8 @@
     }
 
     postElement.innerHTML = content;
-    if (toTop) {
-      feed.insertBefore(postElement, feed.firstChild);
-    } else {
-      feed.appendChild(postElement);
-    }
+    if (toTop) feed.insertBefore(postElement, feed.firstChild);
+    else feed.appendChild(postElement);
   }
 </script>
 </body>
