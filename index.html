@@ -49,156 +49,156 @@
     </div>
   </div>
 
-  <script>
-    const apiUrl = ${window.location.protocol}//${window.location.host}/api/messages;
+<script>
+  const apiUrl = `${window.location.protocol}//${window.location.host}/api/messages`;
 
-    document.addEventListener("DOMContentLoaded", () => {
-      checkAuth();
-      loadPosts();
-      setInterval(loadPosts, 1000);
-    });
+  document.addEventListener("DOMContentLoaded", () => {
+    checkAuth();
+    loadPosts();
+    setInterval(loadPosts, 1000);
+  });
 
-    function checkAuth() {
-      fetch("/api/me")
-        .then(res => {
-          if (!res.ok) throw new Error("Not logged in");
-          return res.json();
-        })
-        .then(user => {
-          document.getElementById("accountBtn").style.display = "block";
-          document.getElementById("accountUsername").textContent = user.username;
-          document.getElementById("accountPfp").src = user.pfp || "favicon.ico";
-        })
-        .catch(() => {
-          document.getElementById("authModal").style.display = "flex";
-        });
-    }
-
-    function login() {
-      fetch("/api/login", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          username: document.getElementById("loginUsername").value,
-          password: document.getElementById("loginPassword").value
-        })
-      })
+  function checkAuth() {
+    fetch("/api/me")
       .then(res => {
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error("Not logged in");
         return res.json();
       })
-      .then(() => location.reload())
-      .catch(() => alert("Login failed"));
+      .then(user => {
+        document.getElementById("accountBtn").style.display = "block";
+        document.getElementById("accountUsername").textContent = user.username;
+        document.getElementById("accountPfp").src = user.pfp || "favicon.ico";
+      })
+      .catch(() => {
+        document.getElementById("authModal").style.display = "flex";
+      });
+  }
+
+  function login() {
+    fetch("/api/login", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        username: document.getElementById("loginUsername").value,
+        password: document.getElementById("loginPassword").value
+      })
+    })
+    .then(res => {
+      if (!res.ok) throw new Error();
+      return res.json();
+    })
+    .then(() => location.reload())
+    .catch(() => alert("Login failed"));
+  }
+
+  function signup() {
+    fetch("/api/signup", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ password: document.getElementById("signupPassword").value })
+    })
+    .then(res => res.json())
+    .then(() => location.reload())
+    .catch(() => alert("Signup failed"));
+  }
+
+  function changePassword() {
+    fetch("/api/change-password", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        oldPassword: document.getElementById("oldPassword").value,
+        newPassword: document.getElementById("newPassword").value
+      })
+    })
+    .then(res => {
+      if (!res.ok) throw new Error();
+      alert("Password changed");
+    })
+    .catch(() => alert("Password change failed"));
+  }
+
+  function uploadPfp() {
+    const file = document.getElementById("pfpInput").files[0];
+    const formData = new FormData();
+    formData.append("pfp", file);
+    fetch("/api/upload-pfp", {
+      method: "POST",
+      body: formData
+    })
+    .then(() => location.reload())
+    .catch(() => alert("Upload failed"));
+  }
+
+  function openAccountModal() {
+    document.getElementById("accountModal").style.display = "flex";
+  }
+
+  function closeAccountModal() {
+    document.getElementById("accountModal").style.display = "none";
+  }
+
+  function loadPosts() {
+    fetch(apiUrl)
+      .then(response => response.json())
+      .then(posts => {
+        posts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const feed = document.getElementById("feed");
+        feed.innerHTML = "";
+        posts.forEach(post => addPostToFeed(post, false));
+      })
+      .catch(error => console.error("Error loading posts:", error));
+  }
+
+  function postMessage() {
+    const input = document.getElementById("postInput");
+    const imageInput = document.getElementById("imageInput");
+    const message = input.value.trim();
+
+    const formData = new FormData();
+    formData.append("message", message);
+    if (imageInput.files.length > 0) {
+      formData.append("image", imageInput.files[0]);
     }
 
-    function signup() {
-      fetch("/api/signup", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ password: document.getElementById("signupPassword").value })
-      })
-      .then(res => res.json())
-      .then(() => location.reload())
-      .catch(() => alert("Signup failed"));
-    }
-
-    function changePassword() {
-      fetch("/api/change-password", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          oldPassword: document.getElementById("oldPassword").value,
-          newPassword: document.getElementById("newPassword").value
-        })
-      })
-      .then(res => {
-        if (!res.ok) throw new Error();
-        alert("Password changed");
-      })
-      .catch(() => alert("Password change failed"));
-    }
-
-    function uploadPfp() {
-      const file = document.getElementById("pfpInput").files[0];
-      const formData = new FormData();
-      formData.append("pfp", file);
-      fetch("/api/upload-pfp", {
+    if (message || imageInput.files.length > 0) {
+      fetch(apiUrl, {
         method: "POST",
         body: formData
       })
-      .then(() => location.reload())
-      .catch(() => alert("Upload failed"));
+      .then(response => response.json())
+      .then(savedPost => {
+        addPostToFeed(savedPost, true);
+        input.value = "";
+        imageInput.value = null;
+      })
+      .catch(error => console.error("Error posting message:", error));
+    }
+  }
+
+  function addPostToFeed(post, toTop = true) {
+    const feed = document.getElementById("feed");
+
+    const postElement = document.createElement("li");
+    postElement.classList.add("post");
+
+    let content = `
+      <span class="username">${post.username}</span>
+      <div class="message">${post.message}</div>
+      <div class="timestamp">${new Date(post.timestamp).toLocaleString()}</div>
+    `;
+
+    if (post.imageUrl) {
+      content += `<img src="${post.imageUrl}" alt="Uploaded image">`;
     }
 
-    function openAccountModal() {
-      document.getElementById("accountModal").style.display = "flex";
+    postElement.innerHTML = content;
+    if (toTop) {
+      feed.insertBefore(postElement, feed.firstChild);
+    } else {
+      feed.appendChild(postElement);
     }
-
-    function closeAccountModal() {
-      document.getElementById("accountModal").style.display = "none";
-    }
-
-    function loadPosts() {
-      fetch(apiUrl)
-        .then(response => response.json())
-        .then(posts => {
-          posts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-          const feed = document.getElementById("feed");
-          feed.innerHTML = "";
-          posts.forEach(post => addPostToFeed(post, false));
-        })
-        .catch(error => console.error("Error loading posts:", error));
-    }
-
-    function postMessage() {
-      const input = document.getElementById("postInput");
-      const imageInput = document.getElementById("imageInput");
-      const message = input.value.trim();
-
-      const formData = new FormData();
-      formData.append("message", message);
-      if (imageInput.files.length > 0) {
-        formData.append("image", imageInput.files[0]);
-      }
-
-      if (message || imageInput.files.length > 0) {
-        fetch(apiUrl, {
-          method: "POST",
-          body: formData
-        })
-          .then(response => response.json())
-          .then(savedPost => {
-            addPostToFeed(savedPost, true);
-            input.value = "";
-            imageInput.value = null;
-          })
-          .catch(error => console.error("Error posting message:", error));
-      }
-    }
-
-    function addPostToFeed(post, toTop = true) {
-      const feed = document.getElementById("feed");
-
-      const postElement = document.createElement("li");
-      postElement.classList.add("post");
-
-      let content = 
-        <span class="username">${post.username}</span>
-        <div class="message">${post.message}</div>
-        <div class="timestamp">${new Date(post.timestamp).toLocaleString()}</div>
-      ;
-
-      if (post.imageUrl) {
-        content += <img src="${post.imageUrl}" alt="Uploaded image">;
-      }
-
-      postElement.innerHTML = content;
-      if (toTop) {
-        feed.insertBefore(postElement, feed.firstChild);
-      } else {
-        feed.appendChild(postElement);
-      }
-    }
-  </script>
+  }
+</script>
 </body>
 </html>
